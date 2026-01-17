@@ -2,16 +2,18 @@
  * Observation Handler - PostToolUse
  *
  * Extracted from save-hook.ts - sends tool usage to worker for storage.
+ * 
+ * OPTIMIZED: Removed ensureWorkerRunning() call since worker is started at SessionStart.
+ * Only triggers on meaningful tools (Write|Edit|NotebookEdit|Bash) via matcher.
  */
 
 import type { EventHandler, NormalizedHookInput, HookResult } from '../types.js';
-import { ensureWorkerRunning, getWorkerPort, getWorkerHost } from '../../shared/worker-utils.js';
+import { getWorkerPort, getWorkerHost } from '../../shared/worker-utils.js';
 import { logger } from '../../utils/logger.js';
 
 export const observationHandler: EventHandler = {
   async execute(input: NormalizedHookInput): Promise<HookResult> {
-    // Ensure worker is running before any other logic
-    await ensureWorkerRunning();
+    // Worker is already running from SessionStart - skip ensureWorkerRunning() for performance
 
     const { sessionId, cwd, toolName, toolInput, toolResponse } = input;
 
