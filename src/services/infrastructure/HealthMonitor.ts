@@ -96,7 +96,7 @@ export async function httpShutdown(port: number): Promise<boolean> {
  * This is the "expected" version that should be running
  */
 export function getInstalledPluginVersion(): string {
-  const marketplaceRoot = path.join(homedir(), '.claude', 'plugins', 'marketplaces', 'thedotmack');
+  const marketplaceRoot = path.join(homedir(), '.claude', 'plugins', 'marketplaces', 'rpirruccio');
   const packageJsonPath = path.join(marketplaceRoot, 'package.json');
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
   return packageJson.version;
