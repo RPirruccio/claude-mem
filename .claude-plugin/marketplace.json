@@ -1,11 +1,11 @@
 {
-  "name": "thedotmack",
+  "name": "rpirruccio",
   "owner": {
-    "name": "Alex Newman"
+    "name": "Riccardo Pirruccio"
   },
   "metadata": {
-    "description": "Plugins by Alex Newman (thedotmack)",
-    "homepage": "https://github.com/thedotmack/claude-mem"
+    "description": "Fork of claude-mem with distributed worker support",
+    "homepage": "https://github.com/RPirruccio/claude-mem"
   },
   "plugins": [
     {
