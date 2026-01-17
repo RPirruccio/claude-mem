@@ -7,7 +7,7 @@
  */
 
 import type { EventHandler, NormalizedHookInput, HookResult } from '../types.js';
-import { ensureWorkerRunning, getWorkerPort, getWorkerHost } from '../../shared/worker-utils.js';
+import { ensureWorkerRunning, getWorkerUrl } from '../../shared/worker-utils.js';
 import { logger } from '../../utils/logger.js';
 import { extractLastMessage } from '../../shared/transcript-parser.js';
 
@@ -18,8 +18,6 @@ export const summarizeHandler: EventHandler = {
 
     const { sessionId, transcriptPath } = input;
 
-    const host = getWorkerHost();
-    const port = getWorkerPort();
 
     // Validate required fields before processing
     if (!transcriptPath) {
@@ -31,13 +29,14 @@ export const summarizeHandler: EventHandler = {
     // The user's original request is already stored in user_prompts table.
     const lastAssistantMessage = extractLastMessage(transcriptPath, 'assistant', true);
 
+    const workerUrl = getWorkerUrl();
     logger.dataIn('HOOK', 'Stop: Requesting summary', {
-      workerPort: port,
+      workerUrl,
       hasLastAssistantMessage: !!lastAssistantMessage
     });
 
     // Send to worker - worker handles privacy check and database operations
-    const response = await fetch(`http://${host}:${port}/api/sessions/summarize`, {
+    const response = await fetch(`${workerUrl}/api/sessions/summarize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

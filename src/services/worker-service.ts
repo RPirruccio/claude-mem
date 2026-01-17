@@ -442,6 +442,21 @@ async function main() {
 
   switch (command) {
     case 'start': {
+      // Remote mode: if WORKER_URL is set, skip local worker start
+      const remoteUrl = process.env.CLAUDE_MEM_WORKER_URL;
+      if (remoteUrl) {
+        logger.info('SYSTEM', 'Remote worker mode - skipping local start', { remoteUrl });
+        try {
+          const response = await fetch(`${remoteUrl}/api/health`);
+          if (response.ok) {
+            logger.info('SYSTEM', 'Remote worker is healthy');
+          }
+        } catch (e) {
+          logger.warn('SYSTEM', 'Remote worker not reachable, continuing anyway', { remoteUrl });
+        }
+        exitWithStatus('ready');
+      }
+
       if (await waitForHealth(port, 1000)) {
         const versionCheck = await checkVersionMatch(port);
         if (!versionCheck.matches) {

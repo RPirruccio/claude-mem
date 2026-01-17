@@ -5,7 +5,7 @@
  */
 
 import type { EventHandler, NormalizedHookInput, HookResult } from '../types.js';
-import { ensureWorkerRunning, getWorkerPort, getWorkerHost } from '../../shared/worker-utils.js';
+import { ensureWorkerRunning, getWorkerUrl } from '../../shared/worker-utils.js';
 import { getProjectName } from '../../utils/project-name.js';
 import { logger } from '../../utils/logger.js';
 
@@ -21,13 +21,12 @@ export const sessionInitHandler: EventHandler = {
     }
 
     const project = getProjectName(cwd);
-    const host = getWorkerHost();
-    const port = getWorkerPort();
 
     logger.debug('HOOK', 'session-init: Calling /api/sessions/init', { contentSessionId: sessionId, project });
+    const workerUrl = getWorkerUrl();
 
     // Initialize session via HTTP - handles DB operations and privacy checks
-    const initResponse = await fetch(`http://${host}:${port}/api/sessions/init`, {
+    const initResponse = await fetch(`${workerUrl}/api/sessions/init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -72,9 +71,10 @@ export const sessionInitHandler: EventHandler = {
       const cleanedPrompt = prompt.startsWith('/') ? prompt.substring(1) : prompt;
 
       logger.debug('HOOK', 'session-init: Calling /sessions/{sessionDbId}/init', { sessionDbId, promptNumber });
+    const workerUrl = getWorkerUrl();
 
       // Initialize SDK agent session via HTTP (starts the agent!)
-      const response = await fetch(`http://${host}:${port}/sessions/${sessionDbId}/init`, {
+      const response = await fetch(`${workerUrl}/sessions/${sessionDbId}/init`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userPrompt: cleanedPrompt, promptNumber })
@@ -86,6 +86,7 @@ export const sessionInitHandler: EventHandler = {
       }
     } else if (input.platform === 'cursor') {
       logger.debug('HOOK', 'session-init: Skipping SDK agent init for Cursor platform', { sessionDbId, promptNumber });
+    const workerUrl = getWorkerUrl();
     }
 
     logger.info('HOOK', `INIT_COMPLETE | sessionDbId=${sessionDbId} | promptNumber=${promptNumber} | project=${project}`, {

@@ -168,10 +168,13 @@ export class SettingsDefaultsManager {
         }
       }
 
-      // Merge file settings with defaults (flat schema)
+      // Merge: env vars > file settings > defaults
       const result: SettingsDefaults = { ...this.DEFAULTS };
       for (const key of Object.keys(this.DEFAULTS) as Array<keyof SettingsDefaults>) {
-        if (flatSettings[key] !== undefined) {
+        // Environment variable takes highest priority
+        if (process.env[key] !== undefined && process.env[key] !== '') {
+          result[key] = process.env[key] as string;
+        } else if (flatSettings[key] !== undefined) {
           result[key] = flatSettings[key];
         }
       }

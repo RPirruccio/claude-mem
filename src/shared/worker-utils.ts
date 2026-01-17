@@ -48,6 +48,25 @@ export function getWorkerHost(): string {
 }
 
 /**
+ * Get the full worker URL
+ * Priority: CLAUDE_MEM_WORKER_URL env var > build from host:port
+ * Use this for all HTTP connections to worker
+ */
+export function getWorkerUrl(): string {
+  // Check env var first (highest priority for remote mode)
+  const envUrl = process.env.CLAUDE_MEM_WORKER_URL;
+  if (envUrl && envUrl.trim() !== '') {
+    // Remove trailing slash if present
+    return envUrl.replace(/\/+$/, '');
+  }
+  
+  // Build from host:port
+  const workerUrl = getWorkerUrl();
+  
+  return `${workerUrl}`;
+}
+
+/**
  * Clear the cached port and host values
  * Call this when settings are updated to force re-reading from file
  */
@@ -61,10 +80,10 @@ export function clearPortCache(): void {
  * Changed from /health to /api/readiness to ensure MCP initialization is complete
  */
 async function isWorkerHealthy(): Promise<boolean> {
-  const host = getWorkerHost();
-  const port = getWorkerPort();
+  const workerUrl = getWorkerUrl();
+  
   // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-  const response = await fetch(`http://${host}:${port}/api/readiness`);
+  const response = await fetch(`${workerUrl}/api/readiness`);
   return response.ok;
 }
 
@@ -81,10 +100,10 @@ function getPluginVersion(): string {
  * Get the running worker's version from the API
  */
 async function getWorkerVersion(): Promise<string> {
-  const host = getWorkerHost();
-  const port = getWorkerPort();
+  const workerUrl = getWorkerUrl();
+  
   // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-  const response = await fetch(`http://${host}:${port}/api/version`);
+  const response = await fetch(`${workerUrl}/api/version`);
   if (!response.ok) {
     throw new Error(`Failed to get worker version: ${response.status}`);
   }
