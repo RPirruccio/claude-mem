@@ -12,7 +12,7 @@
 import path from 'path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { getWorkerPort, getWorkerHost } from '../shared/worker-utils.js';
+import { getWorkerPort, getWorkerHost, getWorkerUrl, isRemoteWorker } from '../shared/worker-utils.js';
 import { logger } from '../utils/logger.js';
 
 // Version injected at build time by esbuild define
@@ -442,17 +442,20 @@ async function main() {
 
   switch (command) {
     case 'start': {
-      // Remote mode: if WORKER_URL is set, skip local worker start
+      // Remote mode: check env var OR settings-based remote host
       const remoteUrl = process.env.CLAUDE_MEM_WORKER_URL;
-      if (remoteUrl) {
-        logger.info('SYSTEM', 'Remote worker mode - skipping local start', { remoteUrl });
+      const isRemote = remoteUrl || isRemoteWorker();
+
+      if (isRemote) {
+        const workerUrl = remoteUrl || getWorkerUrl();
+        logger.info('SYSTEM', 'Remote worker mode - skipping local start', { workerUrl });
         try {
-          const response = await fetch(`${remoteUrl}/api/health`);
+          const response = await fetch(`${workerUrl}/api/health`);
           if (response.ok) {
             logger.info('SYSTEM', 'Remote worker is healthy');
           }
         } catch (e) {
-          logger.warn('SYSTEM', 'Remote worker not reachable, continuing anyway', { remoteUrl });
+          logger.warn('SYSTEM', 'Remote worker not reachable, continuing anyway', { workerUrl });
         }
         exitWithStatus('ready');
       }

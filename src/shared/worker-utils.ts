@@ -32,9 +32,10 @@ export function getWorkerPort(): number {
 }
 
 /**
- * Get the worker host address
+ * Get the worker host address (bind address)
  * Uses CLAUDE_MEM_WORKER_HOST from settings file or default (127.0.0.1)
  * Caches the host value to avoid repeated file reads
+ * Note: This is the address the server BINDS to (0.0.0.0 for all interfaces)
  */
 export function getWorkerHost(): string {
   if (cachedHost !== null) {
@@ -45,6 +46,20 @@ export function getWorkerHost(): string {
   const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
   cachedHost = settings.CLAUDE_MEM_WORKER_HOST;
   return cachedHost;
+}
+
+/**
+ * Get the worker host address for connections (health checks, API calls)
+ * If bind host is 0.0.0.0, returns 127.0.0.1 for local connections
+ * Otherwise returns the configured host
+ */
+export function getWorkerConnectHost(): string {
+  const bindHost = getWorkerHost();
+  // 0.0.0.0 means "all interfaces" for binding, but for connecting we need localhost
+  if (bindHost === '0.0.0.0') {
+    return '127.0.0.1';
+  }
+  return bindHost;
 }
 
 /**
@@ -59,9 +74,18 @@ export function getWorkerUrl(): string {
     // Remove trailing slash if present
     return envUrl.replace(/\/+$/, '');
   }
-  
-  // Build from host:port
-  return `http://${getWorkerHost()}:${getWorkerPort()}`;
+
+  // Build from connect host:port (not bind host)
+  return `http://${getWorkerConnectHost()}:${getWorkerPort()}`;
+}
+
+/**
+ * Check if the worker is configured to run on a remote host
+ * Returns true if CLAUDE_MEM_WORKER_HOST is NOT localhost/127.0.0.1
+ */
+export function isRemoteWorker(): boolean {
+  const host = getWorkerHost();
+  return host !== '127.0.0.1' && host !== 'localhost';
 }
 
 /**
@@ -132,16 +156,17 @@ async function checkWorkerVersion(): Promise<void> {
 /**
  * Ensure worker service is running
  * Polls until worker is ready (assumes worker-service.cjs start was called by hooks.json)
+ * Returns true if worker is healthy, false if not reachable (fails gracefully)
  */
-export async function ensureWorkerRunning(): Promise<void> {
-  const maxRetries = 75;  // 15 seconds total
+export async function ensureWorkerRunning(): Promise<boolean> {
+  const maxRetries = 15;  // 3 seconds total (reduced from 15s to avoid blocking)
   const pollInterval = 200;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       if (await isWorkerHealthy()) {
         await checkWorkerVersion();  // logs warning on mismatch, doesn't restart
-        return;
+        return true;
       }
     } catch (e) {
       logger.debug('SYSTEM', 'Worker health check failed, will retry', {
@@ -153,8 +178,11 @@ export async function ensureWorkerRunning(): Promise<void> {
     await new Promise(r => setTimeout(r, pollInterval));
   }
 
-  throw new Error(getWorkerRestartInstructions({
-    port: getWorkerPort(),
-    customPrefix: 'Worker did not become ready within 15 seconds.'
-  }));
+  // Graceful degradation: log warning and continue without memory features
+  const workerUrl = getWorkerUrl();
+  logger.warn('SYSTEM', 'Worker not reachable - memory features disabled for this session', {
+    workerUrl,
+    timeoutMs: maxRetries * pollInterval
+  });
+  return false;
 }

@@ -11,8 +11,11 @@ import { logger } from '../../utils/logger.js';
 
 export const fileEditHandler: EventHandler = {
   async execute(input: NormalizedHookInput): Promise<HookResult> {
-    // Ensure worker is running before any other logic
-    await ensureWorkerRunning();
+    // Check if worker is running - if not, continue without memory features
+    const workerAvailable = await ensureWorkerRunning();
+    if (!workerAvailable) {
+      return { continue: true, suppressOutput: true };
+    }
 
     const { sessionId, cwd, filePath, edits } = input;
 

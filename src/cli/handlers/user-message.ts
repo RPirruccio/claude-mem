@@ -12,8 +12,11 @@ import { HOOK_EXIT_CODES } from '../../shared/hook-constants.js';
 
 export const userMessageHandler: EventHandler = {
   async execute(input: NormalizedHookInput): Promise<HookResult> {
-    // Ensure worker is running
-    await ensureWorkerRunning();
+    // Check if worker is running - if not, skip displaying context
+    const workerAvailable = await ensureWorkerRunning();
+    if (!workerAvailable) {
+      return { exitCode: HOOK_EXIT_CODES.USER_MESSAGE_ONLY };
+    }
 
     const project = basename(input.cwd ?? process.cwd());
     const workerUrl = getWorkerUrl();

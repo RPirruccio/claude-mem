@@ -13,14 +13,16 @@ import path from 'path';
 import { homedir } from 'os';
 import { readFileSync } from 'fs';
 import { logger } from '../../utils/logger.js';
+import { getWorkerConnectHost } from '../../shared/worker-utils.js';
 
 /**
  * Check if a port is in use by querying the health endpoint
  */
 export async function isPortInUse(port: number): Promise<boolean> {
   try {
+    const host = getWorkerConnectHost();
     // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-    const response = await fetch(`http://127.0.0.1:${port}/api/health`);
+    const response = await fetch(`http://${host}:${port}/api/health`);
     return response.ok;
   } catch (error) {
     // [ANTI-PATTERN IGNORED]: Health check polls every 500ms, logging would flood
@@ -35,15 +37,16 @@ export async function isPortInUse(port: number): Promise<boolean> {
  * @returns true if worker became ready, false if timeout
  */
 export async function waitForHealth(port: number, timeoutMs: number = 30000): Promise<boolean> {
+  const host = getWorkerConnectHost();
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
       // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-      const response = await fetch(`http://127.0.0.1:${port}/api/readiness`);
+      const response = await fetch(`http://${host}:${port}/api/readiness`);
       if (response.ok) return true;
     } catch (error) {
       // [ANTI-PATTERN IGNORED]: Retry loop - expected failures during startup, will retry
-      logger.debug('SYSTEM', 'Service not ready yet, will retry', { port }, error as Error);
+      logger.debug('SYSTEM', 'Service not ready yet, will retry', { port, host }, error as Error);
     }
     await new Promise(r => setTimeout(r, 500));
   }
@@ -69,24 +72,25 @@ export async function waitForPortFree(port: number, timeoutMs: number = 10000): 
  * @returns true if shutdown request was acknowledged, false otherwise
  */
 export async function httpShutdown(port: number): Promise<boolean> {
+  const host = getWorkerConnectHost();
   try {
     // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-    const response = await fetch(`http://127.0.0.1:${port}/api/admin/shutdown`, {
+    const response = await fetch(`http://${host}:${port}/api/admin/shutdown`, {
       method: 'POST'
     });
     if (!response.ok) {
-      logger.warn('SYSTEM', 'Shutdown request returned error', { port, status: response.status });
+      logger.warn('SYSTEM', 'Shutdown request returned error', { port, host, status: response.status });
       return false;
     }
     return true;
   } catch (error) {
     // Connection refused is expected if worker already stopped
     if (error instanceof Error && error.message?.includes('ECONNREFUSED')) {
-      logger.debug('SYSTEM', 'Worker already stopped', { port }, error);
+      logger.debug('SYSTEM', 'Worker already stopped', { port, host }, error);
       return false;
     }
     // Unexpected error - log full details
-    logger.error('SYSTEM', 'Shutdown request failed unexpectedly', { port }, error as Error);
+    logger.error('SYSTEM', 'Shutdown request failed unexpectedly', { port, host }, error as Error);
     return false;
   }
 }
@@ -107,14 +111,15 @@ export function getInstalledPluginVersion(): string {
  * This is the "actual" version currently running
  */
 export async function getRunningWorkerVersion(port: number): Promise<string | null> {
+  const host = getWorkerConnectHost();
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/version`);
+    const response = await fetch(`http://${host}:${port}/api/version`);
     if (!response.ok) return null;
     const data = await response.json() as { version: string };
     return data.version;
   } catch {
     // Expected: worker not running or version endpoint unavailable
-    logger.debug('SYSTEM', 'Could not fetch worker version', { port });
+    logger.debug('SYSTEM', 'Could not fetch worker version', { port, host });
     return null;
   }
 }

@@ -11,8 +11,12 @@ import { logger } from '../../utils/logger.js';
 
 export const sessionInitHandler: EventHandler = {
   async execute(input: NormalizedHookInput): Promise<HookResult> {
-    // Ensure worker is running before any other logic
-    await ensureWorkerRunning();
+    // Check if worker is running - if not, continue without memory features
+    const workerAvailable = await ensureWorkerRunning();
+    if (!workerAvailable) {
+      logger.warn('HOOK', 'session-init: Worker not available, continuing without memory features');
+      return { continue: true, suppressOutput: true };
+    }
 
     const { sessionId, cwd, prompt } = input;
 

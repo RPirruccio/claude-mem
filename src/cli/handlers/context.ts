@@ -11,8 +11,16 @@ import { getProjectContext } from '../../utils/project-name.js';
 
 export const contextHandler: EventHandler = {
   async execute(input: NormalizedHookInput): Promise<HookResult> {
-    // Ensure worker is running before any other logic
-    await ensureWorkerRunning();
+    // Check if worker is running - if not, return empty context
+    const workerAvailable = await ensureWorkerRunning();
+    if (!workerAvailable) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'SessionStart',
+          additionalContext: ''
+        }
+      };
+    }
 
     const cwd = input.cwd ?? process.cwd();
     const context = getProjectContext(cwd);
