@@ -61,9 +61,7 @@ export function getWorkerUrl(): string {
   }
   
   // Build from host:port
-  const workerUrl = getWorkerUrl();
-  
-  return `${workerUrl}`;
+  return `http://${getWorkerHost()}:${getWorkerPort()}`;
 }
 
 /**
