@@ -99,16 +99,20 @@ export function clearPortCache(): void {
 
 /**
  * Fetch with timeout using Promise.race (avoids AbortSignal.timeout Windows Bun issue)
- * Returns undefined if timeout is reached
+ * Returns undefined if timeout is reached or network error occurs
  */
-export async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response | undefined> {
+export async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+  options?: RequestInit
+): Promise<Response | undefined> {
   const timeoutPromise = new Promise<undefined>((resolve) => {
     setTimeout(() => resolve(undefined), timeoutMs);
   });
 
   try {
     const result = await Promise.race([
-      fetch(url),
+      fetch(url, options),
       timeoutPromise
     ]);
     return result;

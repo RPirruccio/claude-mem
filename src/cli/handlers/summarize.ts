@@ -7,7 +7,7 @@
  */
 
 import type { EventHandler, NormalizedHookInput, HookResult } from '../types.js';
-import { ensureWorkerRunning, getWorkerUrl } from '../../shared/worker-utils.js';
+import { ensureWorkerRunning, getWorkerUrl, fetchWithTimeout } from '../../shared/worker-utils.js';
 import { logger } from '../../utils/logger.js';
 import { extractLastMessage } from '../../shared/transcript-parser.js';
 
@@ -20,7 +20,6 @@ export const summarizeHandler: EventHandler = {
     }
 
     const { sessionId, transcriptPath } = input;
-
 
     // Validate required fields before processing
     if (!transcriptPath) {
@@ -38,23 +37,33 @@ export const summarizeHandler: EventHandler = {
       hasLastAssistantMessage: !!lastAssistantMessage
     });
 
-    // Send to worker - worker handles privacy check and database operations
-    const response = await fetch(`${workerUrl}/api/sessions/summarize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contentSessionId: sessionId,
-        last_assistant_message: lastAssistantMessage
-      })
-      // Note: Removed signal to avoid Windows Bun cleanup issue (libuv assertion)
-    });
+    // Send to worker with timeout - gracefully degrade if worker becomes unavailable
+    try {
+      const response = await fetchWithTimeout(`${workerUrl}/api/sessions/summarize`, 3000, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentSessionId: sessionId,
+          last_assistant_message: lastAssistantMessage
+        })
+      });
 
-    if (!response.ok) {
-      // Return standard response even on failure (matches original behavior)
-      return { continue: true, suppressOutput: true };
+      if (!response) {
+        logger.warn('HOOK', 'Stop: Worker unavailable, summary not stored');
+        return { continue: true, suppressOutput: true };
+      }
+
+      if (!response.ok) {
+        logger.warn('HOOK', `Stop: Summary request failed (${response.status})`);
+        return { continue: true, suppressOutput: true };
+      }
+
+      logger.debug('HOOK', 'Summary request sent successfully');
+    } catch (error) {
+      logger.warn('HOOK', 'Stop: Worker not reachable, summary not stored', {
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
-
-    logger.debug('HOOK', 'Summary request sent successfully');
 
     return { continue: true, suppressOutput: true };
   }

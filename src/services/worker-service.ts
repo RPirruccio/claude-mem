@@ -594,6 +594,14 @@ async function main() {
 
     case '--daemon':
     default: {
+      // Ignore SIGHUP to survive SSH disconnects (Unix/Linux only)
+      // When terminal closes, it sends SIGHUP to all children - we want to keep running
+      if (process.platform !== 'win32') {
+        process.on('SIGHUP', () => {
+          logger.debug('SYSTEM', 'Received SIGHUP, ignoring (daemon mode)');
+        });
+      }
+
       const worker = new WorkerService();
       worker.start().catch((error) => {
         logger.failure('SYSTEM', 'Worker failed to start', {}, error as Error);
