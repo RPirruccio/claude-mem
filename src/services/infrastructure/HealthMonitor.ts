@@ -13,21 +13,19 @@ import path from 'path';
 import { homedir } from 'os';
 import { readFileSync } from 'fs';
 import { logger } from '../../utils/logger.js';
-import { getWorkerConnectHost } from '../../shared/worker-utils.js';
+import { getWorkerConnectHost, fetchWithTimeout } from '../../shared/worker-utils.js';
+
+// Default timeout for health check fetches (3 seconds)
+const FETCH_TIMEOUT_MS = 3000;
 
 /**
  * Check if a port is in use by querying the health endpoint
  */
 export async function isPortInUse(port: number): Promise<boolean> {
-  try {
-    const host = getWorkerConnectHost();
-    // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-    const response = await fetch(`http://${host}:${port}/api/health`);
-    return response.ok;
-  } catch (error) {
-    // [ANTI-PATTERN IGNORED]: Health check polls every 500ms, logging would flood
-    return false;
-  }
+  const host = getWorkerConnectHost();
+  // Use Promise.race timeout to avoid blocking when worker is unreachable
+  const response = await fetchWithTimeout(`http://${host}:${port}/api/health`, FETCH_TIMEOUT_MS);
+  return response?.ok ?? false;
 }
 
 /**
@@ -40,14 +38,10 @@ export async function waitForHealth(port: number, timeoutMs: number = 30000): Pr
   const host = getWorkerConnectHost();
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    try {
-      // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-      const response = await fetch(`http://${host}:${port}/api/readiness`);
-      if (response.ok) return true;
-    } catch (error) {
-      // [ANTI-PATTERN IGNORED]: Retry loop - expected failures during startup, will retry
-      logger.debug('SYSTEM', 'Service not ready yet, will retry', { port, host }, error as Error);
-    }
+    // Use Promise.race timeout to avoid blocking when worker is unreachable
+    const response = await fetchWithTimeout(`http://${host}:${port}/api/readiness`, FETCH_TIMEOUT_MS);
+    if (response?.ok) return true;
+    logger.debug('SYSTEM', 'Service not ready yet, will retry', { port, host });
     await new Promise(r => setTimeout(r, 500));
   }
   return false;
@@ -73,13 +67,24 @@ export async function waitForPortFree(port: number, timeoutMs: number = 10000): 
  */
 export async function httpShutdown(port: number): Promise<boolean> {
   const host = getWorkerConnectHost();
+  // Note: fetchWithTimeout doesn't support POST method, so we use a custom wrapper
+  const timeoutPromise = new Promise<undefined>((resolve) => {
+    setTimeout(() => resolve(undefined), FETCH_TIMEOUT_MS);
+  });
+
   try {
-    // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-    const response = await fetch(`http://${host}:${port}/api/admin/shutdown`, {
-      method: 'POST'
-    });
-    if (!response.ok) {
-      logger.warn('SYSTEM', 'Shutdown request returned error', { port, host, status: response.status });
+    const result = await Promise.race([
+      fetch(`http://${host}:${port}/api/admin/shutdown`, { method: 'POST' }),
+      timeoutPromise
+    ]);
+
+    if (!result) {
+      logger.warn('SYSTEM', 'Shutdown request timed out', { port, host });
+      return false;
+    }
+
+    if (!result.ok) {
+      logger.warn('SYSTEM', 'Shutdown request returned error', { port, host, status: result.status });
       return false;
     }
     return true;
@@ -89,8 +94,8 @@ export async function httpShutdown(port: number): Promise<boolean> {
       logger.debug('SYSTEM', 'Worker already stopped', { port, host }, error);
       return false;
     }
-    // Unexpected error - log full details
-    logger.error('SYSTEM', 'Shutdown request failed unexpectedly', { port, host }, error as Error);
+    // Network error or unexpected - log and return false
+    logger.debug('SYSTEM', 'Shutdown request failed', { port, host }, error as Error);
     return false;
   }
 }
@@ -112,14 +117,16 @@ export function getInstalledPluginVersion(): string {
  */
 export async function getRunningWorkerVersion(port: number): Promise<string | null> {
   const host = getWorkerConnectHost();
+  // Use Promise.race timeout to avoid blocking when worker is unreachable
+  const response = await fetchWithTimeout(`http://${host}:${port}/api/version`, FETCH_TIMEOUT_MS);
+  if (!response?.ok) {
+    logger.debug('SYSTEM', 'Could not fetch worker version', { port, host });
+    return null;
+  }
   try {
-    const response = await fetch(`http://${host}:${port}/api/version`);
-    if (!response.ok) return null;
     const data = await response.json() as { version: string };
     return data.version;
   } catch {
-    // Expected: worker not running or version endpoint unavailable
-    logger.debug('SYSTEM', 'Could not fetch worker version', { port, host });
     return null;
   }
 }

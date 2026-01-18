@@ -12,7 +12,7 @@
 import path from 'path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { getWorkerPort, getWorkerHost, getWorkerUrl, isRemoteWorker } from '../shared/worker-utils.js';
+import { getWorkerPort, getWorkerHost, getWorkerUrl, isRemoteWorker, fetchWithTimeout } from '../shared/worker-utils.js';
 import { logger } from '../utils/logger.js';
 
 // Version injected at build time by esbuild define
@@ -449,12 +449,11 @@ async function main() {
       if (isRemote) {
         const workerUrl = remoteUrl || getWorkerUrl();
         logger.info('SYSTEM', 'Remote worker mode - skipping local start', { workerUrl });
-        try {
-          const response = await fetch(`${workerUrl}/api/health`);
-          if (response.ok) {
-            logger.info('SYSTEM', 'Remote worker is healthy');
-          }
-        } catch (e) {
+        // Use 3 second timeout to avoid blocking hooks when worker is unreachable
+        const response = await fetchWithTimeout(`${workerUrl}/api/health`, 3000);
+        if (response?.ok) {
+          logger.info('SYSTEM', 'Remote worker is healthy');
+        } else {
           logger.warn('SYSTEM', 'Remote worker not reachable, continuing anyway', { workerUrl });
         }
         exitWithStatus('ready');

@@ -98,15 +98,37 @@ export function clearPortCache(): void {
 }
 
 /**
+ * Fetch with timeout using Promise.race (avoids AbortSignal.timeout Windows Bun issue)
+ * Returns undefined if timeout is reached
+ */
+export async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response | undefined> {
+  const timeoutPromise = new Promise<undefined>((resolve) => {
+    setTimeout(() => resolve(undefined), timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([
+      fetch(url),
+      timeoutPromise
+    ]);
+    return result;
+  } catch {
+    // Network error, connection refused, etc.
+    return undefined;
+  }
+}
+
+/**
  * Check if worker is responsive and fully initialized by trying the readiness endpoint
  * Changed from /health to /api/readiness to ensure MCP initialization is complete
+ * Uses 3 second timeout to avoid blocking hooks when worker is unreachable
  */
 async function isWorkerHealthy(): Promise<boolean> {
   const workerUrl = getWorkerUrl();
-  
-  // Note: Removed AbortSignal.timeout to avoid Windows Bun cleanup issue (libuv assertion)
-  const response = await fetch(`${workerUrl}/api/readiness`);
-  return response.ok;
+
+  // Use Promise.race timeout instead of AbortSignal.timeout (Windows Bun cleanup issue)
+  const response = await fetchWithTimeout(`${workerUrl}/api/readiness`, 3000);
+  return response?.ok ?? false;
 }
 
 /**
