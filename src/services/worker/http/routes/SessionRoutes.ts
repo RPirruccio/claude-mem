@@ -122,12 +122,26 @@ export class SessionRoutes extends BaseRouteHandler {
   ): void {
     if (!session) return;
 
+    // CRITICAL: Reset AbortController if it was previously aborted
+    // This fixes the bug where the iterator exits immediately because the signal is already aborted
+    if (session.abortController.signal.aborted) {
+      logger.debug('SESSION', 'Resetting aborted controller before starting generator', {
+        sessionId: session.sessionDbId,
+        source
+      });
+      session.abortController = new AbortController();
+    }
+
     const agent = provider === 'openrouter' ? this.openRouterAgent : (provider === 'gemini' ? this.geminiAgent : this.sdkAgent);
     const agentName = provider === 'openrouter' ? 'OpenRouter' : (provider === 'gemini' ? 'Gemini' : 'Claude SDK');
 
+    // Get actual queue depth from persistent store (not deprecated in-memory array)
+    const pendingStore = this.sessionManager.getPendingMessageStore();
+    const queueDepth = pendingStore.getPendingCount(session.sessionDbId);
+
     logger.info('SESSION', `Generator auto-starting (${source}) using ${agentName}`, {
       sessionId: session.sessionDbId,
-      queueDepth: session.pendingMessages.length,
+      queueDepth,
       historyLength: session.conversationHistory.length
     });
 
@@ -362,11 +376,15 @@ export class SessionRoutes extends BaseRouteHandler {
       return;
     }
 
+    // Get actual queue depth from persistent store (not deprecated in-memory array)
+    const pendingStore = this.sessionManager.getPendingMessageStore();
+    const queueLength = pendingStore.getPendingCount(sessionDbId);
+
     res.json({
       status: 'active',
       sessionDbId,
       project: session.project,
-      queueLength: session.pendingMessages.length,
+      queueLength,
       uptime: Date.now() - session.startTime
     });
   });
